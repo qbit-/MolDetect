@@ -4,3 +4,4 @@ scripts/*.sh
 output/**/*.json
 *.png
 .ipynb_checkpoints
+*.egg-info
