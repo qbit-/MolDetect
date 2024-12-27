@@ -1,2 +1,3 @@
-from .interface import RxnScribe
-from .interface import MolDetect
+from .interface import MolDetect, RxnScribe
+
+__all__ = ['RxnScribe', 'MolDetect']

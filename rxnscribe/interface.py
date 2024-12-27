@@ -1,21 +1,26 @@
-import os
 import argparse
 from typing import List
+
+import easyocr
+import matplotlib.pyplot as plt
+import numpy as np
 import PIL
 import torch
-from torch.profiler import profile, record_function, ProfilerActivity
-import numpy as np
-import matplotlib.pyplot as plt
+from huggingface_hub import hf_hub_download
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from molscribe import MolScribe
 
+from .data import (
+    CorefImageData,
+    ImageData,
+    ReactionImageData,
+    postprocess_bboxes,
+    postprocess_coref_results,
+    postprocess_reactions,
+)
+from .dataset import make_transforms
 from .pix2seq import build_pix2seq_model
 from .tokenizer import get_tokenizer
-from .dataset import make_transforms
-from .data import postprocess_reactions, postprocess_bboxes, postprocess_coref_results, ReactionImageData, ImageData, CorefImageData
-
-from molscribe import MolScribe
-from huggingface_hub import hf_hub_download
-import easyocr
 
 
 class RxnScribe:
@@ -169,7 +174,7 @@ class RxnScribe:
 
 class MolDetect:
 
-    def __init__(self, model_path, device = None, coref = False):
+    def __init__(self, model_path, device = None, coref = False, molscribe = True, ocr = True) -> None:
         """
         MolDetect Interface
         :param model_path: path of the model checkpoint. 
@@ -185,8 +190,15 @@ class MolDetect:
         self.tokenizer = get_tokenizer(args)
         self.model = self.get_model(args, self.tokenizer, self.device, states['state_dict'])
         self.transform = make_transforms('test', augment=False, debug=False)
-        self.ocr_model = self.get_ocr_model()
-        self.molscribe = self.get_molscribe()
+        self.coref = coref
+        if ocr:
+            self.ocr_model = self.get_ocr_model()
+        else:
+            self.ocr_model = None
+        if molscribe:
+            self.molscribe = self.get_molscribe()
+        else:
+            self.molscribe = None
 
     def _get_args(self):
         parser = argparse.ArgumentParser()
@@ -240,9 +252,9 @@ class MolDetect:
         reader = easyocr.Reader(['en'], gpu = (self.device.type == 'cuda'))
         return reader
     
-    def predict_images(self, input_images: List, batch_size = 16, molscribe = False, coref = False, ocr = False):
+    def predict_images(self, input_images: List, batch_size = 16, molscribe = False, ocr = False):
         device = self.device
-        if not coref:
+        if not self.coref:
             tokenizer = self.tokenizer['bbox']
         else:
             tokenizer = self.tokenizer['coref']
@@ -255,26 +267,26 @@ class MolDetect:
                 pred_seqs, pred_scores = self.model(images, max_len=tokenizer.max_len)
             for i, (seqs, scores) in enumerate(zip(pred_seqs, pred_scores)):
                 bboxes = tokenizer.sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs[i]['scale'])
-                if coref: 
+                if self.coref: 
                     bboxes = postprocess_coref_results(bboxes, image = input_images[i], molscribe = self.molscribe if molscribe else None, ocr = self.ocr_model if ocr else None)
-                if not coref:
+                else:
                     bboxes = postprocess_bboxes(bboxes, image = input_images[i], molscribe = self.molscribe if molscribe else None)
                 predictions.append(bboxes)
         return predictions
 
-    def predict_image(self, image, molscribe = False, coref = False, ocr = False):
-        predictions = self.predict_images([image], molscribe = molscribe, coref = coref, ocr = ocr)
+    def predict_image(self, image, molscribe = False, ocr = False):
+        predictions = self.predict_images([image], molscribe = molscribe, ocr = ocr)
         return predictions[0]
 
-    def predict_image_files(self, image_files: List, batch_size = 16, molscribe = False, coref = False, ocr = False):
+    def predict_image_files(self, image_files: List, batch_size = 16, molscribe = False, ocr = False):
         input_images = []
         for path in image_files:
             image = PIL.Image.open(path).convert("RGB")
             input_images.append(image)
-        return self.predict_images(input_images, batch_size = batch_size, molscribe = molscribe, coref = coref, ocr = ocr)
+        return self.predict_images(input_images, batch_size = batch_size, molscribe = molscribe, ocr = ocr)
 
-    def predict_image_file(self, image_file: str, molscribe = False, coref = False, ocr = False, **kwargs):
-        predictions = self.predict_image_files([image_file], molscribe = molscribe, coref = coref, ocr = ocr)
+    def predict_image_file(self, image_file: str, molscribe = False, ocr = False, **kwargs):
+        predictions = self.predict_image_files([image_file], molscribe = molscribe, ocr = ocr)
         return predictions[0]
     
     def draw_bboxes(self, predictions, image=None, image_file=None, coref = False):

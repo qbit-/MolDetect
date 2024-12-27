@@ -6,3 +6,5 @@ output/**/*.json
 .ipynb_checkpoints
 *.egg-info
 poetry.lock
+ckpts/*
+notebook
