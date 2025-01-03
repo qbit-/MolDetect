@@ -1,13 +1,11 @@
-import numpy as np
 
+import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import timm
-
-from .inference import GreedySearch, BeamSearch
-from .transformer import TransformerDecoder, Embeddings
+from .inference import BeamSearch, GreedySearch
+from .transformer import Embeddings, TransformerDecoder
 
 
 class Encoder(nn.Module):
@@ -34,7 +32,7 @@ class Encoder(nn.Module):
             self.cnn.global_pool = nn.Identity()
             self.cnn.classifier = nn.Identity()
         else:
-            raise NotImplemented
+            raise NotImplementedError
 
     def swin_forward(self, transformer, x):
         x = transformer.patch_embed(x)
@@ -45,7 +43,7 @@ class Encoder(nn.Module):
         def layer_forward(layer, x, hiddens):
             for blk in layer.blocks:
                 if not torch.jit.is_scripting() and layer.use_checkpoint:
-                    x = torch.utils.checkpoint.checkpoint(blk, x)
+                    x = torch.utils.checkpoint.checkpoint(blk, x, use_reentrant=True)
                 else:
                     x = blk(x)
             H, W = layer.input_resolution
@@ -73,7 +71,7 @@ class Encoder(nn.Module):
             else:
                 features, hiddens = self.transformer(x)
         else:
-            raise NotImplemented
+            raise NotImplementedError
         return features, hiddens
 
 

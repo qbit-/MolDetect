@@ -3,16 +3,12 @@
 Pix2Seq model and criterion classes.
 """
 import torch
-from torch.profiler import profile, record_function, ProfilerActivity
-import torch.nn.functional as F
 from torch import nn
-
-from .misc import nested_tensor_from_tensor_list
-from .backbone import build_backbone
-from .transformer import build_transformer
 from transformers import GenerationConfig
 
-import numpy as np
+from .backbone import build_backbone
+from .misc import nested_tensor_from_tensor_list
+from .transformer import build_transformer
 
 
 class Pix2Seq(nn.Module):
@@ -143,7 +139,7 @@ class Pix2Seq(nn.Module):
                 '''
                 bs = src.shape[0]
                 src = src.flatten(2).permute(0, 2, 1)
-                generation_config = GenerationConfig(max_new_tokens = max_len, bos_token_id = 2002, eos_token_id = 2092, pad_token_id = 2001, output_hidden_states = True)
+                generation_config = GenerationConfig(max_new_tokens = max_len, bos_token_id = 2002, eos_token_id = 2092, pad_token_id = 2001, output_hidden_states = False)
                 #output = self.transformer.generate(inputs_embeds = src, generation_config = generation_config, return_dict_in_generate=True, output_scores=True)
                 #transition_scores = self.transformer.compute_transition_scores(output.sequences, output.scores, normalize_logits=True)
                 #for tok, score in zip(output.sequences[0], transition_scores[0]):

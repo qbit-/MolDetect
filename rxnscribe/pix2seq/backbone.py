@@ -2,14 +2,14 @@
 """
 Backbone modules.
 """
-from collections import OrderedDict
+
+from typing import Dict, List
 
 import torch
 import torch.nn.functional as F
 import torchvision
 from torch import nn
 from torchvision.models._utils import IntermediateLayerGetter
-from typing import Dict, List
 
 from .misc import NestedTensor, is_main_process
 from .position_encoding import build_position_encoding
@@ -86,9 +86,9 @@ class Backbone(BackboneBase):
                  return_interm_layers: bool,
                  dilation: bool):
         backbone = getattr(torchvision.models, name)(
+            weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V1 if is_main_process() else None,
             replace_stride_with_dilation=[False, False, dilation],
-            pretrained=is_main_process(), norm_layer=FrozenBatchNorm2d)
-        # weights="IMAGENET1K_V1"
+            norm_layer=FrozenBatchNorm2d)
         num_channels = 512 if name in ('resnet18', 'resnet34') else 2048
         super().__init__(backbone, train_backbone, num_channels, return_interm_layers)
 
