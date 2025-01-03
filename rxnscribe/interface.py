@@ -1,14 +1,14 @@
 import argparse
-from typing import List
+from typing import Any, List
 
-import easyocr
+import easyocr  # type: ignore
 import matplotlib.pyplot as plt
 import numpy as np
 import PIL
 import torch
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download  # type: ignore
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from molscribe import MolScribe
+from molscribe import MolScribe  # type: ignore
 
 from .data import (
     CorefImageData,
@@ -22,9 +22,9 @@ from .dataset import make_transforms
 from .pix2seq import build_pix2seq_model
 from .tokenizer import get_tokenizer
 
+plt.switch_backend("agg")  # no display
 
 class RxnScribe:
-
     def __init__(self, model_path, device=None):
         """
         RxnScribe Interface
@@ -32,40 +32,81 @@ class RxnScribe:
         :param device: torch device, defaults to be CPU.
         """
         args = self._get_args()
-        args.format = 'reaction'
-        states = torch.load(model_path, map_location=torch.device('cpu'))
+        args.format = "reaction"
+        states = torch.load(model_path, map_location=torch.device("cpu"))
         if device is None:
-            device = torch.device('cpu')
+            device = torch.device("cpu")
         self.device = device
         self.tokenizer = get_tokenizer(args)
-        self.model = self.get_model(args, self.tokenizer, self.device, states['state_dict'])
-        self.transform = make_transforms('test', augment=False, debug=False)
+        self.model = self.get_model(
+            args, self.tokenizer, self.device, states["state_dict"]
+        )
+        self.transform = make_transforms("test", augment=False, debug=False)
         self.molscribe = self.get_molscribe()
         self.ocr_model = self.get_ocr_model()
 
     def _get_args(self):
         parser = argparse.ArgumentParser()
         # * Backbone
-        parser.add_argument('--backbone', default='resnet50', type=str,
-                            help="Name of the convolutional backbone to use")
-        parser.add_argument('--dilation', action='store_true',
-                            help="If true, we replace stride with dilation in the last convolutional block (DC5)")
-        parser.add_argument('--position_embedding', default='sine', type=str, choices=('sine', 'learned'),
-                            help="Type of positional embedding to use on top of the image features")
+        parser.add_argument(
+            "--backbone",
+            default="resnet50",
+            type=str,
+            help="Name of the convolutional backbone to use",
+        )
+        parser.add_argument(
+            "--dilation",
+            action="store_true",
+            help="If true, we replace stride with dilation in the last convolutional block (DC5)",
+        )
+        parser.add_argument(
+            "--position_embedding",
+            default="sine",
+            type=str,
+            choices=("sine", "learned"),
+            help="Type of positional embedding to use on top of the image features",
+        )
         # * Transformer
-        parser.add_argument('--enc_layers', default=6, type=int, help="Number of encoding layers in the transformer")
-        parser.add_argument('--dec_layers', default=6, type=int, help="Number of decoding layers in the transformer")
-        parser.add_argument('--dim_feedforward', default=1024, type=int,
-                            help="Intermediate size of the feedforward layers in the transformer blocks")
-        parser.add_argument('--hidden_dim', default=256, type=int,
-                            help="Size of the embeddings (dimension of the transformer)")
-        parser.add_argument('--dropout', default=0.1, type=float, help="Dropout applied in the transformer")
-        parser.add_argument('--nheads', default=8, type=int,
-                            help="Number of attention heads inside the transformer's attentions")
-        parser.add_argument('--pre_norm', action='store_true')
+        parser.add_argument(
+            "--enc_layers",
+            default=6,
+            type=int,
+            help="Number of encoding layers in the transformer",
+        )
+        parser.add_argument(
+            "--dec_layers",
+            default=6,
+            type=int,
+            help="Number of decoding layers in the transformer",
+        )
+        parser.add_argument(
+            "--dim_feedforward",
+            default=1024,
+            type=int,
+            help="Intermediate size of the feedforward layers in the transformer blocks",
+        )
+        parser.add_argument(
+            "--hidden_dim",
+            default=256,
+            type=int,
+            help="Size of the embeddings (dimension of the transformer)",
+        )
+        parser.add_argument(
+            "--dropout",
+            default=0.1,
+            type=float,
+            help="Dropout applied in the transformer",
+        )
+        parser.add_argument(
+            "--nheads",
+            default=8,
+            type=int,
+            help="Number of attention heads inside the transformer's attentions",
+        )
+        parser.add_argument("--pre_norm", action="store_true")
         # Data
-        parser.add_argument('--format', type=str, default='reaction')
-        parser.add_argument('--input_size', type=int, default=1333)
+        parser.add_argument("--format", type=str, default="reaction")
+        parser.add_argument("--input_size", type=int, default=1333)
 
         args = parser.parse_args([])
         args.pix2seq = True
@@ -77,7 +118,7 @@ class RxnScribe:
 
     def get_model(self, args, tokenizer, device, model_states):
         def remove_prefix(state_dict):
-            return {k.replace('model.', ''): v for k, v in state_dict.items()}
+            return {k.replace("model.", ""): v for k, v in state_dict.items()}
 
         model = build_pix2seq_model(args, tokenizer[args.format])
         model.load_state_dict(remove_prefix(model_states), strict=False)
@@ -91,27 +132,31 @@ class RxnScribe:
         return molscribe
 
     def get_ocr_model(self):
-        reader = easyocr.Reader(['en'], gpu=(self.device.type == 'cuda'))
+        reader = easyocr.Reader(["en"], gpu=(self.device.type == "cuda"))
         return reader
 
-    def predict_images(self, input_images: List, batch_size=16, molscribe=False, ocr=False):
+    def predict_images(
+        self, input_images: List, batch_size=16, molscribe=False, ocr=False
+    ):
         # images: a list of PIL images
         device = self.device
-        tokenizer = self.tokenizer['reaction']
+        tokenizer = self.tokenizer["reaction"]
         predictions = []
         for idx in range(0, len(input_images), batch_size):
-            batch_images = input_images[idx:idx+batch_size]
+            batch_images = input_images[idx : idx + batch_size]
             images, refs = zip(*[self.transform(image) for image in batch_images])
             images = torch.stack(images, dim=0).to(device)
             with torch.no_grad():
                 pred_seqs, pred_scores = self.model(images, max_len=tokenizer.max_len)
             for i, (seqs, scores) in enumerate(zip(pred_seqs, pred_scores)):
-                reactions = tokenizer.sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs[i]['scale'])
+                reactions = tokenizer.sequence_to_data(
+                    seqs.tolist(), scores.tolist(), scale=refs[i]["scale"]
+                )
                 reactions = postprocess_reactions(
                     reactions,
                     image=input_images[i],
                     molscribe=self.molscribe if molscribe else None,
-                    ocr=self.ocr_model if ocr else None
+                    ocr=self.ocr_model if ocr else None,
                 )
                 predictions.append(reactions)
         return predictions
@@ -134,14 +179,16 @@ class RxnScribe:
     def draw_predictions(self, predictions, image=None, image_file=None):
         results = []
         assert image or image_file
-        data = ReactionImageData(predictions=predictions, image=image, image_file=image_file)
+        data = ReactionImageData(
+            predictions=predictions, image=image, image_file=image_file
+        )
         h, w = np.array([data.height, data.width]) * 10 / max(data.height, data.width)
         for r in data.pred_reactions:
             fig, ax = plt.subplots(figsize=(w, h))
             fig.tight_layout()
             canvas = FigureCanvasAgg(fig)
             ax.imshow(data.image)
-            ax.axis('off')
+            ax.axis("off")
             r.draw(ax)
             canvas.draw()
             buf = canvas.buffer_rgba()
@@ -151,7 +198,9 @@ class RxnScribe:
 
     def draw_predictions_combined(self, predictions, image=None, image_file=None):
         assert image or image_file
-        data = ReactionImageData(predictions=predictions, image=image, image_file=image_file)
+        data = ReactionImageData(
+            predictions=predictions, image=image, image_file=image_file
+        )
         h, w = np.array([data.height, data.width]) * 10 / max(data.height, data.width)
         n = len(data.pred_reactions)
         fig, axes = plt.subplots(n, 1, figsize=(w, h * n))
@@ -164,7 +213,9 @@ class RxnScribe:
             ax.imshow(data.image)
             ax.set_xticks([])
             ax.set_yticks([])
-            ax.set_title(f'reaction # {i}', fontdict={'fontweight': 'bold', 'fontsize': 14})
+            ax.set_title(
+                f"reaction # {i}", fontdict={"fontweight": "bold", "fontsize": 14}
+            )
             r.draw(ax)
         canvas.draw()
         buf = canvas.buffer_rgba()
@@ -172,24 +223,30 @@ class RxnScribe:
         plt.close(fig)
         return result_image
 
-class MolDetect:
 
-    def __init__(self, model_path, device = None, coref = False, molscribe = True, ocr = True) -> None:
+class MolDetect:
+    def __init__(
+        self, model_path, device=None, coref=False, molscribe=True, ocr=True
+    ) -> None:
         """
         MolDetect Interface
-        :param model_path: path of the model checkpoint. 
+        :param model_path: path of the model checkpoint.
         :param device: torch device, defaults to be CPU.
         """
         args = self._get_args()
-        if not coref: args.format = 'bbox'
-        else: args.format = 'coref'
-        states = torch.load(model_path, map_location = torch.device('cpu'))
+        if not coref:
+            args.format = "bbox"
+        else:
+            args.format = "coref"
+        states = torch.load(model_path, map_location=torch.device("cpu"))
         if device is None:
-            device = torch.device('cpu')
-        self.device = device 
+            device = torch.device("cpu")
+        self.device = device
         self.tokenizer = get_tokenizer(args)
-        self.model = self.get_model(args, self.tokenizer, self.device, states['state_dict'])
-        self.transform = make_transforms('test', augment=False, debug=False)
+        self.model = self.get_model(
+            args, self.tokenizer, self.device, states["state_dict"]
+        )
+        self.transform = make_transforms("test", augment=False, debug=False)
         self.coref = coref
         if ocr:
             self.ocr_model = self.get_ocr_model()
@@ -203,26 +260,65 @@ class MolDetect:
     def _get_args(self):
         parser = argparse.ArgumentParser()
         # * Backbone
-        parser.add_argument('--backbone', default='resnet50', type=str,
-                            help="Name of the convolutional backbone to use")
-        parser.add_argument('--dilation', action='store_true',
-                            help="If true, we replace stride with dilation in the last convolutional block (DC5)")
-        parser.add_argument('--position_embedding', default='sine', type=str, choices=('sine', 'learned'),
-                            help="Type of positional embedding to use on top of the image features")
+        parser.add_argument(
+            "--backbone",
+            default="resnet50",
+            type=str,
+            help="Name of the convolutional backbone to use",
+        )
+        parser.add_argument(
+            "--dilation",
+            action="store_true",
+            help="If true, we replace stride with dilation in the last convolutional block (DC5)",
+        )
+        parser.add_argument(
+            "--position_embedding",
+            default="sine",
+            type=str,
+            choices=("sine", "learned"),
+            help="Type of positional embedding to use on top of the image features",
+        )
         # * Transformer
-        parser.add_argument('--enc_layers', default=6, type=int, help="Number of encoding layers in the transformer")
-        parser.add_argument('--dec_layers', default=6, type=int, help="Number of decoding layers in the transformer")
-        parser.add_argument('--dim_feedforward', default=1024, type=int,
-                            help="Intermediate size of the feedforward layers in the transformer blocks")
-        parser.add_argument('--hidden_dim', default=256, type=int,
-                            help="Size of the embeddings (dimension of the transformer)")
-        parser.add_argument('--dropout', default=0.1, type=float, help="Dropout applied in the transformer")
-        parser.add_argument('--nheads', default=8, type=int,
-                            help="Number of attention heads inside the transformer's attentions")
-        parser.add_argument('--pre_norm', action='store_true')
+        parser.add_argument(
+            "--enc_layers",
+            default=6,
+            type=int,
+            help="Number of encoding layers in the transformer",
+        )
+        parser.add_argument(
+            "--dec_layers",
+            default=6,
+            type=int,
+            help="Number of decoding layers in the transformer",
+        )
+        parser.add_argument(
+            "--dim_feedforward",
+            default=1024,
+            type=int,
+            help="Intermediate size of the feedforward layers in the transformer blocks",
+        )
+        parser.add_argument(
+            "--hidden_dim",
+            default=256,
+            type=int,
+            help="Size of the embeddings (dimension of the transformer)",
+        )
+        parser.add_argument(
+            "--dropout",
+            default=0.1,
+            type=float,
+            help="Dropout applied in the transformer",
+        )
+        parser.add_argument(
+            "--nheads",
+            default=8,
+            type=int,
+            help="Number of attention heads inside the transformer's attentions",
+        )
+        parser.add_argument("--pre_norm", action="store_true")
         # Data
-        parser.add_argument('--format', type=str, default='reaction')
-        parser.add_argument('--input_size', type=int, default=1333)
+        parser.add_argument("--format", type=str, default="reaction")
+        parser.add_argument("--input_size", type=int, default=1333)
 
         args = parser.parse_args([])
         args.pix2seq = True
@@ -231,11 +327,10 @@ class MolDetect:
         args.is_coco = False
         args.use_hf_transformer = True
         return args
-    
-    
+
     def get_model(self, args, tokenizer, device, model_states):
         def remove_prefix(state_dict):
-            return {k.replace('model.', ''): v for k, v in state_dict.items()}
+            return {k.replace("model.", ""): v for k, v in state_dict.items()}
 
         model = build_pix2seq_model(args, tokenizer[args.format])
         model.load_state_dict(remove_prefix(model_states), strict=False)
@@ -243,69 +338,93 @@ class MolDetect:
         model.eval()
         return model
 
-    def get_molscribe(self): 
+    def get_molscribe(self):
         ckpt_path = hf_hub_download("yujieq/MolScribe", "swin_base_char_aux_1m.pth")
         molscribe = MolScribe(ckpt_path, device=self.device)
         return molscribe
 
     def get_ocr_model(self):
-        reader = easyocr.Reader(['en'], gpu = (self.device.type == 'cuda'))
+        reader = easyocr.Reader(["en"], gpu=(self.device.type == "cuda"))
         return reader
-    
-    def predict_images(self, input_images: List, batch_size = 16, molscribe = False, ocr = False):
+
+    def predict_images(
+        self, input_images: List, batch_size=16, molscribe=False, ocr=False
+    ) -> list[list[dict[str, Any]]]:
         device = self.device
         if not self.coref:
-            tokenizer = self.tokenizer['bbox']
+            tokenizer = self.tokenizer["bbox"]
         else:
-            tokenizer = self.tokenizer['coref']
+            tokenizer = self.tokenizer["coref"]
         predictions = []
         for idx in range(0, len(input_images), batch_size):
-            batch_images = input_images[idx:idx+batch_size]
+            batch_images = input_images[idx : idx + batch_size]
             images, refs = zip(*[self.transform(image) for image in batch_images])
             images = torch.stack(images, dim=0).to(device)
             with torch.no_grad():
                 pred_seqs, pred_scores = self.model(images, max_len=tokenizer.max_len)
             for i, (seqs, scores) in enumerate(zip(pred_seqs, pred_scores)):
-                bboxes = tokenizer.sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs[i]['scale'])
-                if self.coref: 
-                    bboxes = postprocess_coref_results(bboxes, image = input_images[i], molscribe = self.molscribe if molscribe else None, ocr = self.ocr_model if ocr else None)
+                bboxes = tokenizer.sequence_to_data(
+                    seqs.tolist(), scores.tolist(), scale=refs[i]["scale"]
+                )
+                if self.coref:
+                    bboxes = postprocess_coref_results(
+                        bboxes,
+                        image=input_images[i],
+                        molscribe=self.molscribe if molscribe else None,
+                        ocr=self.ocr_model if ocr else None,
+                    )
                 else:
-                    bboxes = postprocess_bboxes(bboxes, image = input_images[i], molscribe = self.molscribe if molscribe else None)
+                    bboxes = postprocess_bboxes(
+                        bboxes,
+                        image=input_images[i],
+                        molscribe=self.molscribe if molscribe else None,
+                    )
                 predictions.append(bboxes)
         return predictions
 
-    def predict_image(self, image, molscribe = False, ocr = False):
-        predictions = self.predict_images([image], molscribe = molscribe, ocr = ocr)
+    def predict_image(self, image, molscribe=False, ocr=False) -> list[dict[str, Any]]:
+        predictions = self.predict_images([image], molscribe=molscribe, ocr=ocr)
         return predictions[0]
 
-    def predict_image_files(self, image_files: List, batch_size = 16, molscribe = False, ocr = False):
+    def predict_image_files(
+        self, image_files: List, batch_size=16, molscribe=False, ocr=False
+    ) -> list[list[dict[str, Any]]]:
         input_images = []
         for path in image_files:
             image = PIL.Image.open(path).convert("RGB")
             input_images.append(image)
-        return self.predict_images(input_images, batch_size = batch_size, molscribe = molscribe, ocr = ocr)
+        return self.predict_images(
+            input_images, batch_size=batch_size, molscribe=molscribe, ocr=ocr
+        )
 
-    def predict_image_file(self, image_file: str, molscribe = False, ocr = False, **kwargs):
-        predictions = self.predict_image_files([image_file], molscribe = molscribe, ocr = ocr)
+    def predict_image_file(
+        self, image_file: str, molscribe=False, ocr=False, **kwargs
+    ) -> dict[str, Any]:
+        predictions = self.predict_image_files(
+            [image_file], molscribe=molscribe, ocr=ocr
+        )
         return predictions[0]
-    
-    def draw_bboxes(self, predictions, image=None, image_file=None, coref = False):
+
+    def draw_bboxes(self, predictions, image=None, image_file=None, coref=False):
         results = []
         assert image or image_file
-        if not coref: data = ImageData(predictions = predictions, image = image, image_file = image_file)
-        else: data = CorefImageData(predictions = predictions['bboxes'], image = image, image_file = image_file)
+        if not coref:
+            data = ImageData(
+                predictions=predictions, image=image, image_file=image_file
+            )
+        else:
+            data = CorefImageData(
+                predictions=predictions["bboxes"], image=image, image_file=image_file
+            )
         h, w = np.array([data.height, data.width]) * 10 / max(data.height, data.width)
-        fig, ax = plt.subplots(figsize = (w, h))
+        fig, ax = plt.subplots(figsize=(w, h))
         fig.tight_layout()
         canvas = FigureCanvasAgg(fig)
         ax.imshow(data.image)
-        ax.axis('off')
+        ax.axis("off")
         data.draw_prediction(ax, data.image)
         canvas.draw()
         buf = canvas.buffer_rgba()
         results.append(np.asarray(buf))
         plt.close(fig)
         return results
-            
-
-
