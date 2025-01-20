@@ -29,7 +29,7 @@ molscribe = {git = "https://github.com/qbit-/MolScribe.git", optional = true }
 easyocr = { version = ">=1.6.2", optional = true }
 
 [tool.poetry.extras]
-scribe = ["MolScribe"]
+scribe = ["molscribe"]
 ocr = ["easyocr"]
 
 
